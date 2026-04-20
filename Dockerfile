@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     aria2 \
     wget \
     unzip \
+    bash \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -53,13 +54,5 @@ RUN mkdir -p /etc/aria2 \
          "continue=true\n" \
          "check-integrity=true" > /etc/aria2/aria2.conf
 
-# Use gunicorn with reduced workers to save memory
-CMD gunicorn --bind 0.0.0.0:${PORT:-8000} \
-    --workers 1 \
-    --threads 2 \
-    --timeout 120 \
-    app:app & \
-    aria2c --enable-rpc --rpc-listen-all --daemon=true && \
-    python3 main.py
-
-
+# Start aria2c daemon, the telegram bot, and finally gunicorn web server
+CMD bash -c "aria2c --enable-rpc --rpc-listen-all --daemon=true & python3 main.py & gunicorn --bind 0.0.0.0:${PORT:-10000} app:app"
