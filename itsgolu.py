@@ -23,7 +23,7 @@ from base64 import b64decode
 import math
 import m3u8
 from urllib.parse import urljoin
-from vars import *  # Add this import
+from vars import * # Add this import
 from db import Database
 
 
@@ -391,9 +391,6 @@ async def download_video(url, cmd, name):
         return name 
 
 
-
-
-
 async def send_vid(bot: Client, m: Message, cc, filename, thumb, name, prog, channel_id, watermark="𝐈𝐓'𝐬𝐆𝐎𝐋𝐔", topic_thread_id: int = None):
     try:
         temp_thumb = None  # ✅ Ensure this is always defined for later cleanup
@@ -571,3 +568,61 @@ async def send_vid(bot: Client, m: Message, cc, filename, thumb, name, prog, cha
 
     except Exception as err:
         raise Exception(f"send_vid failed: {err}")
+
+async def download_and_decrypt_video(url, cmd, name, appxkey):
+    """
+    Appx ના એન્ક્રિપ્ટેડ વિડીયો ડાઉનલોડ કરવા અને તેને ડિક્રિપ્ટ કરવા માટેનું ફંક્શન.
+    """
+    try:
+        output_name = f"{name}.mkv"
+        temp_name = f"{name}_temp.mkv"
+        
+        # 1. yt-dlp થી વિડીયો ડાઉનલોડ કરો
+        download_cmd = f'{cmd} -o "{temp_name}" "{url}"'
+        print(f"Downloading encrypted video: {download_cmd}")
+        subprocess.run(download_cmd, shell=True)
+        
+        if not os.path.exists(temp_name):
+            raise FileNotFoundError(f"Download failed, file {temp_name} not found.")
+
+        # 2. વિડીયો ડિક્રિપ્ટ કરો (appxkey નો ઉપયોગ કરીને)
+        try:
+            # hex string માંથી key ને bytes માં કન્વર્ટ કરો
+            key = bytes.fromhex(appxkey)
+            
+            with open(temp_name, 'rb') as enc_file:
+                # Appx સામાન્ય રીતે 16-byte IV (Initialization Vector) વાપરે છે.
+                # આપણે માની લઈએ છીએ કે IV શૂન્ય (zeros) છે. જો અલગ હશે તો અહી બદલવું પડશે.
+                iv = bytes([0]*16) 
+                
+                cipher = AES.new(key, AES.MODE_CBC, iv)
+                
+                with open(output_name, 'wb') as dec_file:
+                    while True:
+                        chunk = enc_file.read(1024 * 64) # 64KB chunks
+                        if len(chunk) == 0:
+                            break
+                        # પેડિંગ (Padding) ની સમસ્યા નિવારવા માટે
+                        if len(chunk) % 16 != 0:
+                            chunk += b'\0' * (16 - (len(chunk) % 16))
+                        decrypted_chunk = cipher.decrypt(chunk)
+                        dec_file.write(decrypted_chunk)
+                        
+        except Exception as decrypt_err:
+            print(f"Decryption error: {decrypt_err}")
+            raise Exception(f"Failed to decrypt video: {decrypt_err}")
+            
+        finally:
+            # ડિક્રિપ્ટ કર્યા પછી ટેમ્પરરી ફાઈલ ડીલીટ કરો
+            if os.path.exists(temp_name):
+                os.remove(temp_name)
+                
+        # 3. જો ડિક્રિપ્ટેડ ફાઈલ બની ગઈ હોય, તો તેનું નામ પરત કરો
+        if os.path.exists(output_name):
+            return output_name
+        else:
+            raise FileNotFoundError("Decrypted video file was not created.")
+
+    except Exception as e:
+        print(f"Error in download_and_decrypt_video: {str(e)}")
+        raise
